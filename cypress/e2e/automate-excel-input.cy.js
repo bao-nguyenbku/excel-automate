@@ -250,8 +250,9 @@ const typeDateInContainer = ($container, rawValue, fieldCode) => {
  */
 const runSurveyFieldByKind = (kind, containerEl, value, fieldCode) => {
   switch (kind) {
-    case "dropdown":
+    case "dropdown": {
       return selectDropdownInContainer(containerEl, value, fieldCode);
+    }
     case "yesNo":
       return clickYesNoInContainer(containerEl, value, fieldCode);
     case "text":
@@ -266,45 +267,84 @@ const runSurveyFieldByKind = (kind, containerEl, value, fieldCode) => {
 };
 
 /**
- * One iframe read: walk `div[data-testid="livefield"]` in DOM order, parse header code, run registry step.
+ * Walk `div[data-testid="livefield"]` in DOM order and run registry steps.
+ * Re-queries the iframe after each pass so fields revealed by earlier answers (e.g. A2 then A3)
+ * are picked up. Each question code runs at most once per row (`processed` avoids re-typing).
+ *
  * @param {(label: string, fn: () => Cypress.Chainable|undefined) => Cypress.Chainable} step
+ * @param {number} [maxPasses=15] - safety cap if the form keeps adding fields
  */
-const runMappedSurveyFieldSteps = (step, row, colIdx) => {
-  return getIframe().then(($body) => {
-    const $livefields = liveFieldsInBody($body);
-    if (!$livefields.length) {
-      cy.log('No div[data-testid="livefield"] in iframe — skip survey fields');
-      return undefined;
-    }
+const runMappedSurveyFieldSteps = (step, row, colIdx, maxPasses = 15) => {
+  const processed = new Set();
 
-    let chain = cy.wrap(null, { log: false });
-    $livefields.each((_, el) => {
-      const $lf = Cypress.$(el);
-      const code = parseFieldCodeFromLiveField($lf);
-      if (!code) {
-        return;
+  const runPass = (pass) => {
+    return getIframe().then(($body) => {
+      const $livefields = liveFieldsInBody($body);
+      if (!$livefields.length) {
+        if (pass === 0) {
+          cy.log(
+            'No div[data-testid="livefield"] in iframe — skip survey fields',
+          );
+        }
+        return undefined;
       }
-      const spec = SURVEY_FIELD_REGISTRY[code];
-      if (!spec) {
-        return;
+
+      let chain = cy.wrap(null, { log: false });
+      let ranAny = false;
+
+      $livefields.each((_, el) => {
+        const $lf = Cypress.$(el);
+        const code = parseFieldCodeFromLiveField($lf);
+        if (!code || processed.has(code)) {
+          return;
+        }
+        const spec = SURVEY_FIELD_REGISTRY[code];
+        if (!spec) {
+          return;
+        }
+        const colIndex = colIdx[spec.colKey];
+        if (colIndex === undefined || colIndex < 0) {
+          return;
+        }
+        const value = row[colIndex];
+        const containerEl = $lf.find(".LiveField__container").get(0);
+        if (!containerEl) {
+          return;
+        }
+        ranAny = true;
+        chain = chain.then(() =>
+          step(code, () => {
+            const run = runSurveyFieldByKind(
+              spec.kind,
+              containerEl,
+              value,
+              code,
+            );
+            const markDone = () => {
+              processed.add(code);
+            };
+            if (run != null && typeof run.then === "function") {
+              return run.then(markDone);
+            }
+            markDone();
+            return run;
+          }),
+        );
+      });
+
+      if (!ranAny || pass + 1 >= maxPasses) {
+        if (ranAny && pass + 1 >= maxPasses) {
+          cy.log(
+            `runMappedSurveyFieldSteps: max passes (${maxPasses}) reached — there may be unanswered fields`,
+          );
+        }
+        return chain;
       }
-      const colIndex = colIdx[spec.colKey];
-      if (colIndex === undefined || colIndex < 0) {
-        return;
-      }
-      const value = row[colIndex];
-      const containerEl = $lf.find(".LiveField__container").get(0);
-      if (!containerEl) {
-        return;
-      }
-      chain = chain.then(() =>
-        step(code, () =>
-          runSurveyFieldByKind(spec.kind, containerEl, value, code),
-        ),
-      );
+      return chain.then(() => runPass(pass + 1));
     });
-    return chain;
-  });
+  };
+
+  return runPass(0);
 };
 
 const getFieldContainer = (fieldCode) => {
@@ -516,7 +556,6 @@ const runSurveyQuestionSteps = (step, row, colIdx) => {
   let isCompleted = false;
   return cy
     .wrap(null)
-    .then(() => cy.get("body").click(100, 100, { force: true }))
     .then(() => runMappedSurveyFieldSteps(step, row, colIdx))
     .then(() => step("Next before signature", () => clickIframeNext()))
     .then(() =>

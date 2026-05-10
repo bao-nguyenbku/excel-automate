@@ -1,4 +1,4 @@
 #!/bin/zsh
 set -e
 cd "$(dirname "$0")"
-npm run open
+npm i && npm run open
