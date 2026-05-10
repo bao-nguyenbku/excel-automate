@@ -150,29 +150,16 @@ const selectDropdownInContainer = ($container, value, fieldCode) => {
     return undefined;
   }
   return cy
-    .window()
-    .then((win) => {
-      win.focus();
-    })
+    .wrap($container)
+    .find("div.LiveField__answer .Select-control")
+    .should("be.visible")
+    .click()
     .then(() =>
-      getIframeDocument().then((doc) => {
-        doc.defaultView?.focus();
-      }),
-    )
-    .then(() => getIframe().click(0, 0, { force: true }))
-    .then(() =>
-      cy
-        .wrap($container)
-        .find("div.LiveField__answer .Select-control")
+      getIframe()
+        .find("div.Select-menu-outer div.Select-option")
+        .contains(new RegExp(String(value), "i"))
         .should("be.visible")
-        .click()
-        .then(() =>
-          getIframe()
-            .find("div.Select-menu-outer div.Select-option")
-            .contains(new RegExp(String(value), "i"))
-            .should("be.visible")
-            .click(),
-        ),
+        .click(),
     );
 };
 
@@ -206,6 +193,7 @@ const typeTextInContainer = ($container, value, fieldCode, optional) => {
     .find("div.LiveField__answer")
     .find("input.LiveField__input")
     .click()
+    .clear()
     .type(String(value));
 };
 
@@ -528,6 +516,7 @@ const runSurveyQuestionSteps = (step, row, colIdx) => {
   let isCompleted = false;
   return cy
     .wrap(null)
+    .then(() => cy.get("body").click(100, 100, { force: true }))
     .then(() => runMappedSurveyFieldSteps(step, row, colIdx))
     .then(() => step("Next before signature", () => clickIframeNext()))
     .then(() =>
