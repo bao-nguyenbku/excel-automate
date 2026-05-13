@@ -163,24 +163,26 @@ const selectDropdownInContainer = ($container, value, fieldCode) => {
     return $match.length ? $match.get(0) : null;
   };
 
+  const realPointerOpts = { scrollBehavior: "center" };
+
   const tryOpenAndSelect = (attempt) =>
     cy
       .wrap($container)
       .find("div.LiveField__answer .Select-control")
       .should("be.visible")
-      .click()
+      .realClick(realPointerOpts)
       .then(() =>
         getIframe().then(($body) => {
           const el = findVisibleMatchingOptionEl($body);
           if (el) {
-            return cy.wrap(el).click();
+            return cy.wrap(el).realClick(realPointerOpts);
           }
           if (attempt >= DROPDOWN_OPEN_ATTEMPTS) {
             return getIframe()
               .find("div.Select-menu-outer div.Select-option")
               .contains(valuePattern)
               .should("be.visible")
-              .click();
+              .realClick(realPointerOpts);
           }
           cy.log(
             `Dropdown "${fieldCode}" — menu not open, retry click (${attempt}/${DROPDOWN_OPEN_ATTEMPTS})`,

@@ -13,5 +13,8 @@
 // https://on.cypress.io/configuration
 // ***********************************************************
 
+// Native pointer events (CDP) — helps some controls (e.g. react-select in iframes).
+import "cypress-real-events";
+
 // Import commands.js using ES2015 syntax:
-import './commands'
+import "./commands";
