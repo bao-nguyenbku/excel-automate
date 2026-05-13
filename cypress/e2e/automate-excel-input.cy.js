@@ -651,6 +651,59 @@ const runSurveyFlowIfIncomplete = (runIncompleteFlow, runCompleteFlow) => {
   });
 };
 
+/** Max tab clicks while waiting for the Intended practices section heading (styled MUI h2). */
+const INTENDED_PRACTICES_NAV_ATTEMPTS = 5;
+const INTENDED_PRACTICES_HEADING_SEL =
+  ".sc-eldPxv.cKoRHP.MuiTypography-root.MuiTypography-h2";
+
+/** Outlined info alert shown when Intended practices is locked (e.g. already enrolled). */
+const INTENDED_PRACTICES_LOCKED_ALERT_SELECTOR =
+  '[role="alert"].MuiAlert-outlinedInfo';
+const INTENDED_PRACTICES_LOCKED_ALERT_TEXT =
+  /This section is locked|already enrolled in Vietnam TRVC Rice/i;
+
+/**
+ * Clicks the Intended practices nav item until the page shows the section heading,
+ * retrying the click if the heading is not visible yet.
+ * @param {number} [attempt=1]
+ */
+const clickIntendedPracticesUntilHeadingVisible = (attempt = 1) =>
+  cy
+    .get('[data-testid="program-stage-subItem-title--Intended practices"]', {
+      timeout: 10000,
+    })
+    .click()
+    .then(() =>
+      cy.wait(500).then(() =>
+        cy.get("body").then(($body) => {
+          const $heading = $body.find(INTENDED_PRACTICES_HEADING_SEL);
+          const hasVisible =
+            $heading.filter((_, el) => Cypress.dom.isVisible(el)).length > 0;
+          if (hasVisible) {
+            cy.log(
+              `Intended practices heading visible (navigation attempt ${attempt}/${INTENDED_PRACTICES_NAV_ATTEMPTS})`,
+            );
+            return cy
+              .get(INTENDED_PRACTICES_HEADING_SEL)
+              .filter(":visible")
+              .first()
+              .should("be.visible");
+          }
+          if (attempt >= INTENDED_PRACTICES_NAV_ATTEMPTS) {
+            return cy
+              .get(INTENDED_PRACTICES_HEADING_SEL, { timeout: 15000 })
+              .should("be.visible");
+          }
+          cy.log(
+            `Intended practices heading not ready — tab click retry ${attempt}/${INTENDED_PRACTICES_NAV_ATTEMPTS}`,
+          );
+          return cy
+            .wait(1000)
+            .then(() => clickIntendedPracticesUntilHeadingVisible(attempt + 1));
+        }),
+      ),
+    );
+
 /** Intended practices table: open each row’s dropdown and select fixed options when not already selected. */
 const fillIntendedPracticesTableRows = () => {
   return cy.get("table tbody tr").each(($tr) => {
@@ -697,6 +750,24 @@ const fillIntendedPracticesTableRows = () => {
   });
 };
 
+/**
+ * Opens the login page and signs in with the given credentials.
+ * @param {{ loginUrl: string, loginEmail: string, loginPassword: string }} opts
+ */
+const visitAndLoginWithCredentials = (opts) => {
+  cy.visit(opts.loginUrl);
+  cy.wait(3000);
+
+  cy.get("#email").click().type(opts.loginEmail);
+  cy.get("#email").should("have.value", opts.loginEmail);
+
+  cy.get("#password").click().type(opts.loginPassword);
+  cy.get("#password").should("have.value", opts.loginPassword);
+
+  cy.get('[data-testid="login-submit-button"]').click();
+  cy.wait(5000);
+};
+
 describe("Automate input from excel", () => {
   it("Full workflow", () => {
     cy.env([
@@ -716,20 +787,14 @@ describe("Automate input from excel", () => {
       const dataRowSliceEnd = resolveSliceEnd(cfg.dataRowSliceEnd, 30);
       const filterProjectId = String(cfg.filterProjectId ?? "").trim();
 
-      cy.visit(cfg.loginUrl);
-      cy.wait(3000);
+      // Step 1: Visit login page and login with credentials
+      visitAndLoginWithCredentials(cfg);
 
-      cy.get("#email").click().type(cfg.loginEmail);
-      cy.get("#email").should("have.value", cfg.loginEmail);
-
-      cy.get("#password").click().type(cfg.loginPassword);
-      cy.get("#password").should("have.value", cfg.loginPassword);
-
-      cy.get('[data-testid="login-submit-button"]').click();
-      cy.wait(5000);
-      cy.contains("a", cfg.programLinkText).click();
-
+      // Step 2: Click on the program link
+      cy.contains("a", cfg.programLinkText, { timeout: 10000 }).click();
       cy.get(".MuiCircularProgress-svg").should("not.exist");
+
+      // Step 3: Read the Excel file
       cy.task("readExcelFile", {
         relativePath: cfg.excelRelativePath,
       }).then((workbook) => {
@@ -738,7 +803,6 @@ describe("Automate input from excel", () => {
         workbook.sheets.forEach((sheet) => {
           cy.log(`Sheet "${sheet.name}": ${sheet.rows.length} rows`);
         });
-        cy.log(JSON.stringify(workbook, null, 2));
 
         // ------------ Preparation ------------
         const header = workbook.sheets[0].rows[1];
@@ -797,130 +861,199 @@ describe("Automate input from excel", () => {
           ...rowsToRun.map((r) => r.length),
         );
         const logHeaders = buildLogHeaders(firstRow, header, logColCount);
-
         // ------------ End of Preparation ------------
-        cy.wrap(rowsToRun).each((row) => {
-          const projectId = row[projectIdColIdx];
 
-          cy.log(`Project ID: ${projectId}`);
-          cy.get('input[placeholder="Search producers"]', { timeout: 10000 })
-            .should("not.be.disabled")
-            .clear({ timeout: 10000 })
-            .type(projectId, { timeout: 10000 });
-          cy.get('input[placeholder="Search producers"]').should(
-            "have.value",
-            projectId,
+        /** Set while a row's Cypress commands are running so `onRowFail` can log and continue. */
+        let pendingRowLog = null;
+
+        function onRowFail(err) {
+          const ctx = pendingRowLog;
+          if (!ctx) {
+            return undefined;
+          }
+          pendingRowLog = null;
+          const errMsg = err?.message ?? String(err);
+          cy.log(
+            `Cypress error for projectId ${ctx.row[ctx.projectIdColIdx]}: ${errMsg}`,
           );
-          cy.wait(1000);
-          cy.get(".MuiCircularProgress-svg").should("not.exist");
-          cy.get("div.MuiDataGrid-virtualScrollerContent").should("be.visible");
+          const next = ctx.index + 1;
+          setTimeout(() => {
+            cy.task("appendExcelRunLog", {
+              relativePath: ctx.cfg.excelLogRelativePath,
+              headers: ctx.logHeaders,
+              rowValues: ctx.row,
+              finished: false,
+              errorMessage: errMsg,
+            }).then(() => runFromIndex(next));
+          }, 0);
+          return false;
+        }
+
+        function runFromIndex(i) {
+          if (i >= rowsToRun.length) {
+            Cypress.off("fail", onRowFail);
+            return cy.wrap(null, { log: false });
+          }
+          const row = rowsToRun[i];
+          const projectId = row[projectIdColIdx];
+          pendingRowLog = { row, logHeaders, cfg, index: i, projectIdColIdx };
 
           const swappedName = swapVietnameseName(row[fullNameColIdx]);
 
-          cy.clickLoginAsWhenNotEnrolled(swappedName).then(
-            (didClickLoginAs) => {
+          const surveyColIdx = {
+            a1aColIdx,
+            a1bColIdx,
+            a1cColIdx,
+            a2ColIdx,
+            a3ColIdx,
+            a4ColIdx,
+            a4aColIdx,
+            a4bColIdx,
+            a5ColIdx,
+            a6ColIdx,
+            a7ColIdx,
+            a8ColIdx,
+            c4ColIdx,
+            c5ColIdx,
+          };
+
+          return cy
+            .log(`Project ID: ${projectId}`)
+            .then(() =>
+              cy
+                .get('input[placeholder="Search producers"]', {
+                  timeout: 10000,
+                })
+                .should("not.be.disabled")
+                .clear({ timeout: 10000 })
+                .type(projectId, { timeout: 10000 }),
+            )
+            .then(() =>
+              cy
+                .get('input[placeholder="Search producers"]')
+                .should("have.value", projectId),
+            )
+            .then(() => cy.wait(1000))
+            .then(() => cy.get(".MuiCircularProgress-svg").should("not.exist"))
+            .then(() =>
+              cy
+                .get("div.MuiDataGrid-virtualScrollerContent")
+                .should("be.visible"),
+            )
+            .then(() => cy.clickLoginAsWhenNotEnrolled(swappedName))
+            .then((didClickLoginAs) => {
               if (!didClickLoginAs) {
-                cy.log(
-                  "Skip follow-up click because user is enrolled/not matched.",
-                );
-                cy.task("appendExcelRunLog", {
-                  relativePath: cfg.excelLogRelativePath,
-                  headers: logHeaders,
-                  rowValues: row,
-                  finished: true,
-                });
-                return;
+                pendingRowLog = null;
+                return cy
+                  .log(
+                    "Skip follow-up click because user is enrolled/not matched.",
+                  )
+                  .then(() =>
+                    cy.task("appendExcelRunLog", {
+                      relativePath: cfg.excelLogRelativePath,
+                      headers: logHeaders,
+                      rowValues: row,
+                      finished: true,
+                    }),
+                  )
+                  .then(() => runFromIndex(i + 1));
               }
-              cy.get("div.kxxfzO button.ifYOlh").click();
-              cy.wait(6000);
-
-              cy.get(
-                '[data-testid="program-stage-subItem-title--Intended practices"]',
-              ).click();
-              cy.wait(3000);
-
-              fillIntendedPracticesTableRows();
-              cy.wait(3000);
-
-              cy.contains("button", /^Next$/).click();
-              cy.wait(4000);
-
-              const surveyColIdx = {
-                a1aColIdx,
-                a1bColIdx,
-                a1cColIdx,
-                a2ColIdx,
-                a3ColIdx,
-                a4ColIdx,
-                a4aColIdx,
-                a4bColIdx,
-                a5ColIdx,
-                a6ColIdx,
-                a7ColIdx,
-                a8ColIdx,
-                c4ColIdx,
-                c5ColIdx,
-              };
-
-              cy.wait(5000);
-              return runSurveyFlowIfIncomplete(
-                () =>
-                  getIframe().then(($body) => {
-                    const $next = $body
-                      .find(".Pagination__btn.Pagination__btn--next")
-                      .filter((_, el) => Cypress.dom.isVisible(el));
-                    if (!$next.length) {
-                      cy.log(
-                        "Pagination Next not visible — skip click, run survey steps",
-                      );
-                      return runIncompleteSurveyWithGuards(row, surveyColIdx);
-                    }
-                    return cy
-                      .wrap($next.first())
-                      .trigger("click")
-                      .then(() => cy.wait(2000))
-                      .then(() =>
-                        runIncompleteSurveyWithGuards(row, surveyColIdx),
-                      );
+              return cy
+                .get("div.kxxfzO button.ifYOlh")
+                .click()
+                .then(() => cy.wait(6000))
+                .then(() =>
+                  clickIntendedPracticesUntilHeadingVisible()
+                    .then(() =>
+                      cy
+                        .contains(
+                          INTENDED_PRACTICES_LOCKED_ALERT_SELECTOR,
+                          INTENDED_PRACTICES_LOCKED_ALERT_TEXT,
+                          { timeout: 15000 },
+                        )
+                        .should("be.visible"),
+                    )
+                    .then(() => fillIntendedPracticesTableRows()),
+                )
+                .then(() => cy.wait(3000))
+                .then(() => cy.contains("button", /^Next$/).click())
+                .then(() => cy.wait(4000))
+                .then(() => cy.wait(5000))
+                .then(() =>
+                  runSurveyFlowIfIncomplete(
+                    () =>
+                      getIframe().then(($body) => {
+                        const $next = $body
+                          .find(".Pagination__btn.Pagination__btn--next")
+                          .filter((_, el) => Cypress.dom.isVisible(el));
+                        if (!$next.length) {
+                          cy.log(
+                            "Pagination Next not visible — skip click, run survey steps",
+                          );
+                          return runIncompleteSurveyWithGuards(
+                            row,
+                            surveyColIdx,
+                          );
+                        }
+                        return cy
+                          .wrap($next.first())
+                          .trigger("click")
+                          .then(() => cy.wait(2000))
+                          .then(() =>
+                            runIncompleteSurveyWithGuards(row, surveyColIdx),
+                          );
+                      }),
+                    () =>
+                      cy
+                        .contains("button", /^Finish$/i)
+                        .should("be.visible")
+                        .click()
+                        .then(() =>
+                          cy
+                            .get(
+                              'button[data-testid="finish-phase-button"]',
+                            )
+                            .contains("Complete enrollment")
+                            .should("be.visible")
+                            .click(),
+                        )
+                        .then(() => cy.wait(4000))
+                        .then(() =>
+                          cy
+                            .get(
+                              '.sc-dhKdcB.lfeRRa[aria-label="menubar profile"]',
+                            )
+                            .should("be.visible")
+                            .click(),
+                        )
+                        .then(() => cy.wait(200))
+                        .then(() =>
+                          cy
+                            .get("ul.sc-eeDRCY.jsJhko.MuiMenu-list")
+                            .find("li:nth-child(2)")
+                            .click(),
+                        )
+                        .then(() => cy.wait(2000)),
+                  ),
+                )
+                .then(() =>
+                  cy.task("appendExcelRunLog", {
+                    relativePath: cfg.excelLogRelativePath,
+                    headers: logHeaders,
+                    rowValues: row,
+                    finished: true,
                   }),
-                () =>
-                  cy
-                    .contains("button", /^Finish$/i)
-                    .should("be.visible")
-                    .click()
-                    .then(() =>
-                      cy
-                        .get('button[data-testid="finish-phase-button"]')
-                        .contains("Complete enrollment")
-                        .should("be.visible")
-                        .click(),
-                    )
-                    .then(() => cy.wait(4000))
-                    .then(() =>
-                      cy
-                        .get('.sc-dhKdcB.lfeRRa[aria-label="menubar profile"]')
-                        .should("be.visible")
-                        .click(),
-                    )
-                    .then(() => cy.wait(200))
-                    .then(() =>
-                      cy
-                        .get("ul.sc-eeDRCY.jsJhko.MuiMenu-list")
-                        .find("li:nth-child(2)")
-                        .click(),
-                    )
-                    .then(() => cy.wait(2000)),
-              ).then(() =>
-                cy.task("appendExcelRunLog", {
-                  relativePath: cfg.excelLogRelativePath,
-                  headers: logHeaders,
-                  rowValues: row,
-                  finished: true,
-                }),
-              );
-            },
-          );
-        });
+                )
+                .then(() => {
+                  pendingRowLog = null;
+                  return runFromIndex(i + 1);
+                });
+            });
+        }
+
+        Cypress.off("fail", onRowFail);
+        Cypress.on("fail", onRowFail);
+        return runFromIndex(0);
       });
     });
   });

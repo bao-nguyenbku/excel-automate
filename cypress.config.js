@@ -131,15 +131,20 @@ module.exports = defineConfig({
           };
         },
         /**
-         * Appends one row to a run log .xlsx: same columns as `rowValues`, plus `Finished`.
+         * Appends one row to a run log .xlsx: same columns as `rowValues`, plus `Finished` and `Error`.
          * Creates the file with a header row if it does not exist.
-         * @param {{ relativePath: string, headers: string[], rowValues: unknown[], finished: boolean }} opts
+         * Older logs without an `Error` column get that column added on the next append.
+         * @param {{ relativePath: string, headers: string[], rowValues: unknown[], finished: boolean, errorMessage?: string }} opts
          */
         appendExcelRunLog(opts) {
           const relativePath = opts?.relativePath;
           const headers = opts?.headers;
           const rowValues = opts?.rowValues;
           const finished = opts?.finished === true;
+          const errorMessage =
+            opts?.errorMessage != null && String(opts.errorMessage).trim() !== ""
+              ? String(opts.errorMessage).trim()
+              : "";
           if (!relativePath) {
             throw new Error("appendExcelRunLog: relativePath is required");
           }
@@ -159,6 +164,20 @@ module.exports = defineConfig({
             return cell;
           };
 
+          const ensureErrorColumn = (existing) => {
+            if (!existing.length) return existing;
+            const headerRow = existing[0];
+            if (headerRow[headerRow.length - 1] === "Error") {
+              return existing;
+            }
+            headerRow.push("Error");
+            for (let r = 1; r < existing.length; r++) {
+              if (!existing[r]) existing[r] = [];
+              existing[r].push("");
+            }
+            return existing;
+          };
+
           const absPath = path.join(config.projectRoot, relativePath);
           const dir = path.dirname(absPath);
           if (!fs.existsSync(dir)) {
@@ -172,18 +191,20 @@ module.exports = defineConfig({
           const line = [
             ...padded.slice(0, headers.length),
             finished ? "Yes" : "No",
+            errorMessage,
           ];
-          const headerLine = [...headers, "Finished"];
+          const headerLine = [...headers, "Finished", "Error"];
           const sheetName = "Run log";
 
           if (fs.existsSync(absPath)) {
             const workbook = XLSX.readFile(absPath);
             const name = workbook.SheetNames[0] || sheetName;
             const sheet = workbook.Sheets[name];
-            const existing = XLSX.utils.sheet_to_json(sheet, {
+            let existing = XLSX.utils.sheet_to_json(sheet, {
               header: 1,
               defval: null,
             });
+            existing = ensureErrorColumn(existing);
             existing.push(line);
             workbook.Sheets[name] = XLSX.utils.aoa_to_sheet(existing);
             XLSX.writeFile(workbook, absPath);
