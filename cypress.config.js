@@ -144,7 +144,9 @@ module.exports = defineConfig({
             throw new Error("appendExcelRunLog: relativePath is required");
           }
           if (!Array.isArray(headers) || !headers.length) {
-            throw new Error("appendExcelRunLog: headers must be a non-empty array");
+            throw new Error(
+              "appendExcelRunLog: headers must be a non-empty array",
+            );
           }
           if (!Array.isArray(rowValues)) {
             throw new Error("appendExcelRunLog: rowValues must be an array");
@@ -167,7 +169,10 @@ module.exports = defineConfig({
           while (padded.length < headers.length) {
             padded.push(null);
           }
-          const line = [...padded.slice(0, headers.length), finished ? "Yes" : "No"];
+          const line = [
+            ...padded.slice(0, headers.length),
+            finished ? "Yes" : "No",
+          ];
           const headerLine = [...headers, "Finished"];
           const sheetName = "Run log";
 

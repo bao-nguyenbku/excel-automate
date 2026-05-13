@@ -143,24 +143,55 @@ const SURVEY_FIELD_REGISTRY = {
   C5: { kind: "date", colKey: "c5ColIdx" },
 };
 
+const DROPDOWN_OPEN_ATTEMPTS = 5;
+const DROPDOWN_OPEN_RETRY_MS = 200;
+
 const selectDropdownInContainer = ($container, value, fieldCode) => {
   const $c = Cypress.$($container);
   if (!$c.find("div.LiveField__answer .Select-control").length) {
     cy.log(`Dropdown field "${fieldCode}" — no Select-control — skip`);
     return undefined;
   }
-  return cy
-    .wrap($container)
-    .find("div.LiveField__answer .Select-control")
-    .should("be.visible")
-    .click()
-    .then(() =>
-      getIframe()
-        .find("div.Select-menu-outer div.Select-option")
-        .contains(new RegExp(String(value), "i"))
-        .should("be.visible")
-        .click(),
-    );
+
+  const valuePattern = new RegExp(String(value), "i");
+  const findVisibleMatchingOptionEl = ($body) => {
+    const $match = $body
+      .find("div.Select-menu-outer div.Select-option")
+      .filter((_, el) => valuePattern.test(Cypress.$(el).text()))
+      .filter(":visible")
+      .first();
+    return $match.length ? $match.get(0) : null;
+  };
+
+  const tryOpenAndSelect = (attempt) =>
+    cy
+      .wrap($container)
+      .find("div.LiveField__answer .Select-control")
+      .should("be.visible")
+      .click()
+      .then(() =>
+        getIframe().then(($body) => {
+          const el = findVisibleMatchingOptionEl($body);
+          if (el) {
+            return cy.wrap(el).click();
+          }
+          if (attempt >= DROPDOWN_OPEN_ATTEMPTS) {
+            return getIframe()
+              .find("div.Select-menu-outer div.Select-option")
+              .contains(valuePattern)
+              .should("be.visible")
+              .click();
+          }
+          cy.log(
+            `Dropdown "${fieldCode}" — menu not open, retry click (${attempt}/${DROPDOWN_OPEN_ATTEMPTS})`,
+          );
+          return cy
+            .wait(DROPDOWN_OPEN_RETRY_MS)
+            .then(() => tryOpenAndSelect(attempt + 1));
+        }),
+      );
+
+  return tryOpenAndSelect(1);
 };
 
 const clickYesNoInContainer = ($container, value, fieldCode) => {
@@ -737,16 +768,26 @@ describe("Automate input from excel", () => {
         }
 
         const dataRows = workbook.sheets[0].rows.slice(excelDataStartRow - 1);
-        const rowsToRun =
-          dataRowSliceEnd === undefined
-            ? dataRows.slice(dataRowSliceStart - excelDataStartRow)
-            : dataRows.slice(
-                dataRowSliceStart - excelDataStartRow,
-                dataRowSliceEnd - excelDataStartRow,
-              );
-        cy.log(
-          `Excel rows: sheet slice from ${excelDataStartRow}, run indices [${dataRowSliceStart}, ${dataRowSliceEnd === undefined ? "end" : dataRowSliceEnd}) (${rowsToRun.length} rows)`,
-        );
+        let rowsToRun;
+        if (filterProjectId) {
+          rowsToRun = dataRows.filter(
+            (r) => String(r[projectIdColIdx] ?? "").trim() === filterProjectId,
+          );
+          cy.log(
+            `filterProjectId=${filterProjectId}: ${rowsToRun.length} matching row(s) in sheet data (from row ${excelDataStartRow})`,
+          );
+        } else {
+          rowsToRun =
+            dataRowSliceEnd === undefined
+              ? dataRows.slice(dataRowSliceStart - excelDataStartRow)
+              : dataRows.slice(
+                  dataRowSliceStart - excelDataStartRow,
+                  dataRowSliceEnd - excelDataStartRow,
+                );
+          cy.log(
+            `Excel rows: sheet slice from ${excelDataStartRow}, run indices [${dataRowSliceStart}, ${dataRowSliceEnd === undefined ? "end" : dataRowSliceEnd}) (${rowsToRun.length} rows)`,
+          );
+        }
 
         const logColCount = Math.max(
           header.length,
@@ -759,14 +800,11 @@ describe("Automate input from excel", () => {
         cy.wrap(rowsToRun).each((row) => {
           const projectId = row[projectIdColIdx];
 
-          if (filterProjectId && String(projectId).trim() !== filterProjectId) {
-            cy.log(`Skip projectId ${projectId}`);
-            return;
-          }
           cy.log(`Project ID: ${projectId}`);
-          cy.get('input[placeholder="Search producers"]')
-            .clear()
-            .type(projectId);
+          cy.get('input[placeholder="Search producers"]', { timeout: 10000 })
+            .should("not.be.disabled")
+            .clear({ timeout: 10000 })
+            .type(projectId, { timeout: 10000 });
           cy.get('input[placeholder="Search producers"]').should(
             "have.value",
             projectId,
