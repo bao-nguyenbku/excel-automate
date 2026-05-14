@@ -662,6 +662,28 @@ const INTENDED_PRACTICES_LOCKED_ALERT_SELECTOR =
 const INTENDED_PRACTICES_LOCKED_ALERT_TEXT =
   /This section is locked|already enrolled in Vietnam TRVC Rice/i;
 
+const hasIntendedPracticesLockedAlertInBody = ($body) =>
+  $body
+    .find(INTENDED_PRACTICES_LOCKED_ALERT_SELECTOR)
+    .toArray()
+    .some((el) =>
+      INTENDED_PRACTICES_LOCKED_ALERT_TEXT.test(Cypress.$(el).text()),
+    );
+
+/** Poll body for locked alert (same window as old 15s `contains` wait). */
+const pollIntendedPracticesLockedAlert = (attempt = 0) =>
+  cy.get("body").then(($body) => {
+    if (hasIntendedPracticesLockedAlertInBody($body)) {
+      return cy.wrap(true);
+    }
+    if (attempt >= 30) {
+      return cy.wrap(false);
+    }
+    return cy.wait(500).then(() =>
+      pollIntendedPracticesLockedAlert(attempt + 1),
+    );
+  });
+
 /**
  * Clicks the Intended practices nav item until the page shows the section heading,
  * retrying the click if the heading is not visible yet.
@@ -963,17 +985,17 @@ describe("Automate input from excel", () => {
                 .click()
                 .then(() => cy.wait(6000))
                 .then(() =>
-                  clickIntendedPracticesUntilHeadingVisible()
-                    .then(() =>
-                      cy
-                        .contains(
-                          INTENDED_PRACTICES_LOCKED_ALERT_SELECTOR,
-                          INTENDED_PRACTICES_LOCKED_ALERT_TEXT,
-                          { timeout: 15000 },
-                        )
-                        .should("be.visible"),
-                    )
-                    .then(() => fillIntendedPracticesTableRows()),
+                  clickIntendedPracticesUntilHeadingVisible().then(() =>
+                    pollIntendedPracticesLockedAlert().then((locked) => {
+                      if (locked) {
+                        cy.log(
+                          "Intended practices locked alert present — skip table fill",
+                        );
+                        return cy.wrap(null, { log: false });
+                      }
+                      return fillIntendedPracticesTableRows();
+                    }),
+                  ),
                 )
                 .then(() => cy.wait(3000))
                 .then(() => cy.contains("button", /^Next$/).click())
