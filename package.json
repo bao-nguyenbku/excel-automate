@@ -1,7 +1,10 @@
 {
   "scripts": {
     "open": "cypress open",
-    "cypress:run:headed": "cypress run --headed"
+    "open:quiet": "CYPRESS_NO_COMMAND_LOG=1 cypress open",
+    "cypress:run:headed": "cypress run --headed",
+    "cypress:run:batch": "cypress run --headed --browser chrome",
+    "cypress:run:batch:quiet": "CYPRESS_NO_COMMAND_LOG=1 cypress run --headed --browser chrome"
   },
   "dependencies": {
     "cypress": "^15.14.2",

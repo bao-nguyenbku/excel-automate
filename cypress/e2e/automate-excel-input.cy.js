@@ -672,7 +672,7 @@ const pollIntendedPracticesLockedAlert = (attempt = 0) =>
     if (hasIntendedPracticesLockedAlertInBody($body)) {
       return cy.wrap(true);
     }
-    if (attempt >= 30) {
+    if (attempt >= 10) {
       return cy.wrap(false);
     }
     return cy
@@ -820,6 +820,7 @@ const fillIntendedPracticesTableRows = () => {
 /**
  * Opens the menubar profile control and chooses the menu action that stops acting as
  * the impersonated producer (second list item — e.g. “Stop using” / log out as user).
+ * Asserts admin program URL and Producers list heading are visible afterward.
  * @returns {Cypress.Chainable}
  */
 const clickMenubarProfileAndStopUsingImpersonatedUser = () =>
@@ -834,7 +835,14 @@ const clickMenubarProfileAndStopUsingImpersonatedUser = () =>
         .find("li:nth-child(2)")
         .click(),
     )
-    .then(() => cy.wait(2000));
+    .then(() => cy.url({ timeout: 30000 }).should("include", "admin/programs"))
+    .then(() => cy.contains("Producers").should("be.visible"))
+    .then(() => {
+      cy.wait(5000);
+      cy.get("h3.MuiTypography-root.MuiTypography-h3")
+        .contains("Producers")
+        .should("be.visible");
+    });
 
 /**
  * Opens the login page and signs in with the given credentials.
@@ -950,6 +958,51 @@ describe("Automate input from excel", () => {
         const logHeaders = buildLogHeaders(firstRow, header, logColCount);
         // ------------ End of Preparation ------------
 
+        const stats = { success: 0, failed: 0, rowsLogged: 0 };
+
+        function buildExcelRunRangeSummary() {
+          if (!rowsToRun.length) {
+            return filterProjectId
+              ? `no rows matched filterProjectId=${filterProjectId}`
+              : "no rows in slice";
+          }
+          const excelRowNums = rowsToRun.map((r) => {
+            const j = dataRows.indexOf(r);
+            if (j === -1) return null;
+            return excelDataStartRow + j;
+          });
+          const valid = excelRowNums.filter((n) => n != null);
+          if (!valid.length) {
+            return "could not map rows to Excel line numbers";
+          }
+          const lo = Math.min(...valid);
+          const hi = Math.max(...valid);
+          const sliceHint = filterProjectId
+            ? `filter=${filterProjectId}`
+            : dataRowSliceEnd === undefined
+              ? `slice [${dataRowSliceStart}, end)`
+              : `slice [${dataRowSliceStart}, ${dataRowSliceEnd})`;
+          if (lo === hi) {
+            return `Excel 1-based row ${lo} (${sliceHint})`;
+          }
+          return `Excel 1-based rows ${lo}–${hi} (${rowsToRun.length} data rows, ${sliceHint})`;
+        }
+
+        /** Appends run log row and updates success/failed counters (success = finished + no errorMessage). */
+        function appendExcelRunLogAndRecord(opts) {
+          return cy.task("appendExcelRunLog", opts).then(() => {
+            stats.rowsLogged += 1;
+            const em =
+              opts.errorMessage != null &&
+              String(opts.errorMessage).trim() !== "";
+            if (opts.finished === true && !em) {
+              stats.success += 1;
+            } else {
+              stats.failed += 1;
+            }
+          });
+        }
+
         /** Set while a row's Cypress commands are running so `onRowFail` can log and continue. */
         let pendingRowLog = null;
 
@@ -965,7 +1018,7 @@ describe("Automate input from excel", () => {
           );
           const next = ctx.index + 1;
           setTimeout(() => {
-            cy.task("appendExcelRunLog", {
+            appendExcelRunLogAndRecord({
               relativePath: ctx.cfg.excelLogRelativePath,
               headers: ctx.logHeaders,
               rowValues: ctx.row,
@@ -979,6 +1032,22 @@ describe("Automate input from excel", () => {
         function runFromIndex(i) {
           if (i >= rowsToRun.length) {
             Cypress.off("fail", onRowFail);
+            const rangeSummary = buildExcelRunRangeSummary();
+            cy.log("========== Run summary ==========");
+            cy.log(
+              `Excel data rows in this run: ${rowsToRun.length} (each row is one projectId in the sheet slice or filter)`,
+            );
+            cy.log(
+              `Rows written to run log: ${stats.rowsLogged} (may be less than above if the test stopped early)`,
+            );
+            cy.log(
+              `Success (finished, no Error column text): ${stats.success}`,
+            );
+            cy.log(
+              `Failed or skipped with note (finished false, or Error column set): ${stats.failed}`,
+            );
+            cy.log(`Excel row range (1-based sheet rows): ${rangeSummary}`);
+            cy.log("==================================");
             return cy.wrap(null, { log: false });
           }
           const row = rowsToRun[i];
@@ -1036,7 +1105,7 @@ describe("Automate input from excel", () => {
                     "Skip follow-up click because user is enrolled/not matched.",
                   )
                   .then(() =>
-                    cy.task("appendExcelRunLog", {
+                    appendExcelRunLogAndRecord({
                       relativePath: cfg.excelLogRelativePath,
                       headers: logHeaders,
                       rowValues: row,
@@ -1048,7 +1117,7 @@ describe("Automate input from excel", () => {
               return cy
                 .get("div.kxxfzO button.ifYOlh")
                 .click()
-                .then(() => cy.wait(15000))
+                .then(() => cy.wait(10000))
                 .then(() => pollIntendedPracticesStageAfterLogin())
                 .then((stageState) => {
                   if (stageState === "disabled") {
@@ -1058,7 +1127,7 @@ describe("Automate input from excel", () => {
                         `Skip projectId ${projectId} — Intended practices disabled on program stage`,
                       )
                       .then(() =>
-                        cy.task("appendExcelRunLog", {
+                        appendExcelRunLogAndRecord({
                           relativePath: cfg.excelLogRelativePath,
                           headers: logHeaders,
                           rowValues: row,
@@ -1135,7 +1204,7 @@ describe("Automate input from excel", () => {
                       ),
                     )
                     .then(() =>
-                      cy.task("appendExcelRunLog", {
+                      appendExcelRunLogAndRecord({
                         relativePath: cfg.excelLogRelativePath,
                         headers: logHeaders,
                         rowValues: row,

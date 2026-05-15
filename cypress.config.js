@@ -59,6 +59,15 @@ module.exports = defineConfig({
   pageLoadTimeout: 120000,
   /** `cy.task` (e.g. Excel read/write) must finish within this (ms). */
   taskTimeout: 180000,
+  /**
+   * Long batch runs (20+ min): reduces Cypress runner / snapshot memory.
+   * In `cypress open`, keeps fewer past tests in memory (helps multi-`it` specs).
+   */
+  numTestsKeptInMemory: 0,
+  /** Chromium GC between tests; helps long headed runs. */
+  experimentalMemoryManagement: true,
+  video: false,
+  screenshotOnRunFailure: true,
   chromeWebSecurity: false,
   defaultBrowser: "chrome",
   e2e: {
@@ -93,6 +102,17 @@ module.exports = defineConfig({
       ),
     },
     setupNodeEvents(on, config) {
+      on("before:browser:launch", (browser, launchOptions) => {
+        if (browser.family === "chromium") {
+          launchOptions.args.push(
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+            "--disable-dev-shm-usage",
+          );
+        }
+        return launchOptions;
+      });
       on("task", {
         /**
          * Reads full .xlsx content: every sheet as a 2D array (row-major), including header rows.
