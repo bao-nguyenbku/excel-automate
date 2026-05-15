@@ -700,22 +700,16 @@ const isIntendedPracticesStagePresentAndClickable = ($body) => {
   return !isIntendedPracticesStageDisabled($body);
 };
 
-/**
- * Waits for the UI to finish loading after impersonation (proxy for in-flight APIs).
- * Cypress cannot read "pending fetch" directly; this uses visible MUI progress and
- * aria-busy. For a specific API, add cy.intercept(...).as('alias') and cy.wait('@alias')
- * before this helper instead (or in addition).
- */
-const waitForStageListNetworkIdle = () =>
-  cy
-    .get("body", { timeout: 10000 })
-    .should(($body) => {
-      const busy = $body
-        .find('[aria-busy="true"]')
-        .filter((_, el) => Cypress.dom.isVisible(el));
-      expect(busy.length, "no visible aria-busy").to.eq(0);
-    })
-    .then(() => cy.wait(5000));
+// const waitForStageListNetworkIdle = () =>
+//   cy
+//     .get("body")
+//     .should(($body) => {
+//       const busy = $body
+//         .find('[aria-busy="true"]')
+//         .filter((_, el) => Cypress.dom.isVisible(el));
+//       expect(busy.length, "no visible aria-busy").to.eq(0);
+//     })
+//     .then(() => cy.wait(5000));
 
 /** After impersonation, wait for stage list: disabled → skip row; else ready to open Intended practices. */
 const pollIntendedPracticesStageAfterLogin = (attempt = 0) => {
@@ -726,7 +720,7 @@ const pollIntendedPracticesStageAfterLogin = (attempt = 0) => {
     if (isIntendedPracticesStagePresentAndClickable($body)) {
       return cy.wrap("ready");
     }
-    if (attempt >= 40) {
+    if (attempt >= 10) {
       return cy.wrap("ready");
     }
     return cy
@@ -861,7 +855,8 @@ const visitAndLoginWithCredentials = (opts) => {
 };
 
 describe("Automate input from excel", () => {
-  it("Full workflow", () => {
+  /** One `it` can run many Excel rows; allow long wall-clock time (ms). */
+  it("Full workflow", { timeout: 45 * 60 * 1000 }, () => {
     cy.env([
       "loginUrl",
       "loginEmail",
@@ -883,7 +878,7 @@ describe("Automate input from excel", () => {
       visitAndLoginWithCredentials(cfg);
 
       // Step 2: Click on the program link
-      cy.contains("a", cfg.programLinkText, { timeout: 10000 }).click();
+      cy.contains("a", cfg.programLinkText).click();
       cy.get(".MuiCircularProgress-svg").should("not.exist");
 
       // Step 3: Read the Excel file
@@ -1017,8 +1012,8 @@ describe("Automate input from excel", () => {
                   timeout: 10000,
                 })
                 .should("not.be.disabled")
-                .clear({ timeout: 10000 })
-                .type(projectId, { timeout: 10000 }),
+                .clear()
+                .type(projectId),
             )
             .then(() =>
               cy
@@ -1053,8 +1048,7 @@ describe("Automate input from excel", () => {
               return cy
                 .get("div.kxxfzO button.ifYOlh")
                 .click()
-                .then(() => cy.wait(6000))
-                .then(() => waitForStageListNetworkIdle())
+                .then(() => cy.wait(15000))
                 .then(() => pollIntendedPracticesStageAfterLogin())
                 .then((stageState) => {
                   if (stageState === "disabled") {

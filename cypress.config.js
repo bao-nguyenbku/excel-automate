@@ -53,7 +53,12 @@ module.exports = defineConfig({
   allowCypressEnv: true,
   viewportWidth: 1600,
   viewportHeight: 900,
-  defaultCommandTimeout: 10000,
+  /** Per-command default (ms). Raise if you see “Timed out retrying…” on slow UI. */
+  defaultCommandTimeout: 15000,
+  /** `cy.visit` / page transitions (ms). */
+  pageLoadTimeout: 120000,
+  /** `cy.task` (e.g. Excel read/write) must finish within this (ms). */
+  taskTimeout: 180000,
   chromeWebSecurity: false,
   defaultBrowser: "chrome",
   e2e: {
