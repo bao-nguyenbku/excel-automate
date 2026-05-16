@@ -1,5 +1,5 @@
 // ***********************************************************
-// This example support/e2e.js is processed and
+// This example support/e2e.ts is processed and
 // loaded automatically before your test files.
 //
 // This is a great place to put global configuration and
@@ -13,8 +13,19 @@
 // https://on.cypress.io/configuration
 // ***********************************************************
 
+// Live mode streams each command to the terminal during long single-`it` runs.
+// Requires the consoleProcessor workaround in cypress.config.ts.
+require("cypress-terminal-report/src/installLogsCollector")({
+  enableContinuousLogging: true,
+  xhr: {
+    printBody: false,
+    printHeaderData: false,
+    printRequestData: false,
+  },
+});
+
 // Native pointer events (CDP) — helps some controls (e.g. react-select in iframes).
 import "cypress-real-events";
 
-// Import commands.js using ES2015 syntax:
+// Import commands.ts using ES2015 syntax:
 import "./commands";

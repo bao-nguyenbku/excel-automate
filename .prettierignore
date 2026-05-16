@@ -1,0 +1,9 @@
+node_modules
+package-lock.json
+yarn.lock
+.env
+cypress/fixtures/**/*.xlsx
+cypress/fixtures/**/*.txt
+cypress/logs/**
+cypress/screenshots
+**/.DS_Store

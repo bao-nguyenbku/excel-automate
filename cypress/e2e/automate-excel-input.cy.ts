@@ -1,5 +1,14 @@
-/** @param {unknown} value @param {number} defaultVal */
-const parseEnvInt = (value, defaultVal) => {
+import type {
+  ExcelRow,
+  ExcelWorkbook,
+  LoginCredentials,
+  SurveyColIdx,
+  SurveyFieldKind,
+  SurveyFieldSpec,
+  WorkflowEnv,
+} from "../types";
+
+const parseEnvInt = (value: unknown, defaultVal: number): number => {
   if (value === undefined || value === null || value === "") {
     return defaultVal;
   }
@@ -10,12 +19,10 @@ const parseEnvInt = (value, defaultVal) => {
   return n;
 };
 
-/**
- * @param {unknown} value
- * @param {number} defaultExclusiveEnd - used when value is undefined/null
- * @returns {number|undefined} undefined means slice to end of array
- */
-const resolveSliceEnd = (value, defaultExclusiveEnd) => {
+const resolveSliceEnd = (
+  value: unknown,
+  defaultExclusiveEnd: number,
+): number | undefined => {
   if (value === undefined || value === null) {
     return defaultExclusiveEnd;
   }
@@ -38,13 +45,6 @@ const swapVietnameseName = (fullName) => {
   return [...parts, lastName].join(" ");
 };
 
-/**
- * One label per column for the run log (sheet row 0 = question codes, row 1 = field names).
- * @param {unknown[]} row0
- * @param {unknown[]} row1
- * @param {number} colCount
- * @returns {string[]}
- */
 const buildLogHeaders = (row0, row1, colCount) =>
   Array.from({ length: colCount }, (_, i) => {
     const a = row0[i];
@@ -56,6 +56,7 @@ const buildLogHeaders = (row0, row1, colCount) =>
     }
     return sa || sb || `Column ${i + 1}`;
   });
+
 const getIframeDocument = () => {
   return cy
     .get("iframe", { timeout: 30000 })
@@ -63,8 +64,7 @@ const getIframeDocument = () => {
       const readyIframe = Array.from($iframes).find((iframeEl) => {
         const doc = iframeEl.contentDocument;
         const href =
-          iframeEl.contentWindow?.location?.href ||
-          iframeEl.contentDocument?.URL;
+          iframeEl.contentWindow?.location?.href || iframeEl.contentDocument?.URL;
         return (
           !!doc &&
           !!doc.body &&
@@ -79,8 +79,7 @@ const getIframeDocument = () => {
       const readyIframe = Array.from($iframes).find((iframeEl) => {
         const doc = iframeEl.contentDocument;
         const href =
-          iframeEl.contentWindow?.location?.href ||
-          iframeEl.contentDocument?.URL;
+          iframeEl.contentWindow?.location?.href || iframeEl.contentDocument?.URL;
         return (
           !!doc &&
           !!doc.body &&
@@ -89,6 +88,9 @@ const getIframeDocument = () => {
           href !== "about:blank"
         );
       });
+      if (!readyIframe?.contentDocument) {
+        throw new Error("iframe document not available");
+      }
       return readyIframe.contentDocument;
     });
 };
@@ -98,15 +100,16 @@ const getIframe = () => {
     .its("body")
     .should("not.be.undefined")
     .should("not.be.empty")
-    .then(cy.wrap);
+    .then((body) => cy.wrap(Cypress.$(body)));
 };
 
 /** Sync query on iframe body — avoids Cypress .find() retry when live fields are absent. */
-const liveFieldContainersInBody = ($body) =>
+const liveFieldContainersInBody = ($body: JQuery<HTMLElement>) =>
   $body.find('div[data-testid="livefield"] .LiveField__container');
 
 /** Top-level question roots inside a section (e.g. Paperform). */
-const liveFieldsInBody = ($body) => $body.find('div[data-testid="livefield"]');
+const liveFieldsInBody = ($body: JQuery<HTMLElement>) =>
+  $body.find('div[data-testid="livefield"]');
 
 /**
  * Reads leading question id from label text (e.g. "A1a.", "C5. ...").
@@ -125,8 +128,7 @@ const parseFieldCodeFromLiveField = ($lf) => {
   return raw.charAt(0).toUpperCase() + raw.slice(1);
 };
 
-/** Maps Excel colIdx keys to interaction kind for known survey codes (DOM order resolved separately). */
-const SURVEY_FIELD_REGISTRY = {
+const SURVEY_FIELD_REGISTRY: Record<string, SurveyFieldSpec> = {
   A1a: { kind: "dropdown", colKey: "a1aColIdx" },
   A1b: { kind: "dropdown", colKey: "a1bColIdx" },
   A1c: { kind: "yesNo", colKey: "a1cColIdx" },
@@ -163,7 +165,7 @@ const selectDropdownInContainer = ($container, value, fieldCode) => {
     return $match.length ? $match.get(0) : null;
   };
 
-  const realPointerOpts = { scrollBehavior: "center" };
+  const realPointerOpts = { scrollBehavior: "center" as const };
 
   const tryOpenAndSelect = (attempt) =>
     cy
@@ -251,11 +253,11 @@ const typeDateInContainer = ($container, rawValue, fieldCode) => {
   return cy
     .wrap($container)
     .find("div.LiveField__answer")
-    .find(
-      "div.PaperDateInput_container input.LiveField__input.PaperDateInput__input",
-    )
+    .find("div.PaperDateInput_container input.LiveField__input.PaperDateInput__input")
     .then(($inputs) => {
-      let chain = cy.wrap(null, { log: false });
+      let chain = cy.wrap(null, { log: false }) as unknown as Cypress.Chainable<
+        JQuery<HTMLElement>
+      >;
       $inputs.each((_, input) => {
         const $input = Cypress.$(input);
         const name = $input.attr("name");
@@ -271,17 +273,18 @@ const typeDateInContainer = ($container, rawValue, fieldCode) => {
         }
         chain = chain.then(() =>
           cy.wrap($input).clear({ force: true }).type(val, { force: true }),
-        );
+        ) as unknown as Cypress.Chainable<JQuery<HTMLElement>>;
       });
       return chain;
     });
 };
 
-/**
- * @param {"dropdown"|"yesNo"|"text"|"optionalText"|"date"} kind
- * @param {HTMLElement} containerEl - .LiveField__container
- */
-const runSurveyFieldByKind = (kind, containerEl, value, fieldCode) => {
+const runSurveyFieldByKind = (
+  kind: SurveyFieldKind,
+  containerEl: HTMLElement,
+  value: unknown,
+  fieldCode: string,
+) => {
   switch (kind) {
     case "dropdown": {
       return selectDropdownInContainer(containerEl, value, fieldCode);
@@ -299,14 +302,6 @@ const runSurveyFieldByKind = (kind, containerEl, value, fieldCode) => {
   }
 };
 
-/**
- * Walk `div[data-testid="livefield"]` in DOM order and run registry steps.
- * Re-queries the iframe after each pass so fields revealed by earlier answers (e.g. A2 then A3)
- * are picked up. Each question code runs at most once per row (`processed` avoids re-typing).
- *
- * @param {(label: string, fn: () => Cypress.Chainable|undefined) => Cypress.Chainable} step
- * @param {number} [maxPasses=15] - safety cap if the form keeps adding fields
- */
 const runMappedSurveyFieldSteps = (step, row, colIdx, maxPasses = 15) => {
   const processed = new Set();
 
@@ -315,9 +310,7 @@ const runMappedSurveyFieldSteps = (step, row, colIdx, maxPasses = 15) => {
       const $livefields = liveFieldsInBody($body);
       if (!$livefields.length) {
         if (pass === 0) {
-          cy.log(
-            'No div[data-testid="livefield"] in iframe — skip survey fields',
-          );
+          cy.log('No div[data-testid="livefield"] in iframe — skip survey fields');
         }
         return undefined;
       }
@@ -347,12 +340,7 @@ const runMappedSurveyFieldSteps = (step, row, colIdx, maxPasses = 15) => {
         ranAny = true;
         chain = chain.then(() =>
           step(code, () => {
-            const run = runSurveyFieldByKind(
-              spec.kind,
-              containerEl,
-              value,
-              code,
-            );
+            const run = runSurveyFieldByKind(spec.kind, containerEl, value, code);
             const markDone = () => {
               processed.add(code);
             };
@@ -395,13 +383,11 @@ const isSurveyCompleteVisible = ($body) =>
     .find("div")
     .toArray()
     .some(
-      (el) =>
-        el.textContent.includes("Survey complete!") &&
-        Cypress.dom.isVisible(el),
+      (el) => el.textContent.includes("Survey complete!") && Cypress.dom.isVisible(el),
     );
 
 const isFinishButtonVisible = () => {
-  return cy.contains("button", /^finish$/i).then(($button) => {
+  return cy.contains("button", /^finish|hoàn thành$/i).then(($button) => {
     if (!$button) {
       return cy.wrap(false);
     }
@@ -413,9 +399,12 @@ const isFinishButtonVisible = () => {
   });
 };
 
-const findLiveFieldContainerByCode = ($body, fieldCode) => {
+const findLiveFieldContainerByCode = (
+  $body: JQuery<HTMLElement>,
+  fieldCode: string,
+): HTMLElement | undefined => {
   const $containers = liveFieldContainersInBody($body);
-  return Array.from($containers).find((containerEl) => {
+  return (Array.from($containers) as HTMLElement[]).find((containerEl) => {
     const headerText = Cypress.$(containerEl)
       .find("label.LiveField__header")
       .text()
@@ -502,13 +491,15 @@ const drawSignatureField = (fieldCode) => {
       return undefined;
     }
 
-    const matchedContainer = Array.from($containers).find((containerEl) => {
-      const headerText = Cypress.$(containerEl)
-        .find("label.LiveField__header")
-        .text()
-        .trim();
-      return headerText.startsWith(fieldCode);
-    });
+    const matchedContainer = (Array.from($containers) as HTMLElement[]).find(
+      (containerEl) => {
+        const headerText = Cypress.$(containerEl)
+          .find("label.LiveField__header")
+          .text()
+          .trim();
+        return headerText.startsWith(fieldCode);
+      },
+    );
 
     if (!matchedContainer) {
       cy.log(`Signature field "${fieldCode}" not found — skip`);
@@ -548,13 +539,15 @@ const drawSignatureField = (fieldCode) => {
 const confirmSignature = (fieldCode) => {
   return getIframe().then(($body) => {
     const $containers = liveFieldContainersInBody($body);
-    const matchedContainer = Array.from($containers).find((containerEl) => {
-      const headerText = Cypress.$(containerEl)
-        .find("label.LiveField__header")
-        .text()
-        .trim();
-      return headerText.startsWith(fieldCode);
-    });
+    const matchedContainer = (Array.from($containers) as HTMLElement[]).find(
+      (containerEl) => {
+        const headerText = Cypress.$(containerEl)
+          .find("label.LiveField__header")
+          .text()
+          .trim();
+        return headerText.startsWith(fieldCode);
+      },
+    );
 
     if (!matchedContainer) {
       cy.log(`Signature confirm "${fieldCode}" not found — skip`);
@@ -591,9 +584,7 @@ const runSurveyQuestionSteps = (step, row, colIdx) => {
     .wrap(null)
     .then(() => runMappedSurveyFieldSteps(step, row, colIdx))
     .then(() => step("Next before signature", () => clickIframeNext()))
-    .then(() =>
-      step("Draw signature", () => drawSignatureField("Please review")),
-    )
+    .then(() => step("Draw signature", () => drawSignatureField("Please review")))
     .then(() =>
       step("Confirm signature", () =>
         confirmSignature("Please review").then(() => (isCompleted = true)),
@@ -656,12 +647,44 @@ const INTENDED_PRACTICES_NAV_ATTEMPTS = 5;
 const INTENDED_PRACTICES_HEADING_SEL =
   ".sc-eldPxv.cKoRHP.MuiTypography-root.MuiTypography-h2";
 
-const hasIntendedPracticesLockedAlertInBody = ($body) =>
+const INTENDED_PRACTICES_STAGE_LABELS = [
+  "Intended practices",
+  "Phương thức can thiệp canh tác dự kiến",
+];
+
+const findIntendedPracticesStageTitleInBody = ($body: JQuery<HTMLBodyElement>) => {
+  for (const label of INTENDED_PRACTICES_STAGE_LABELS) {
+    const $el = $body.find(`[data-testid="program-stage-subItem-title--${label}"]`);
+    if ($el.length) return $el.first();
+  }
+  return Cypress.$();
+};
+
+const findIntendedPracticesStartButtonInBody = ($body: JQuery<HTMLBodyElement>) => {
+  for (const label of INTENDED_PRACTICES_STAGE_LABELS) {
+    const $btn = $body.find(`button[aria-label="${label}"]`);
+    if ($btn.length) return $btn.first();
+  }
+  return Cypress.$();
+};
+
+/** Clicks whichever Intended practices stage title is present (EN or VI, not both). */
+const clickIntendedPracticesStageTitle = () =>
+  cy.get("body", { timeout: 10000 }).then(($body) => {
+    const $title = findIntendedPracticesStageTitleInBody($body);
+    expect(
+      $title.length,
+      `Intended practices stage title (${INTENDED_PRACTICES_STAGE_LABELS.join(" or ")})`,
+    ).to.be.greaterThan(0);
+    return cy.wrap($title).click();
+  });
+
+const hasIntendedPracticesLockedAlertInBody = ($body: JQuery<HTMLBodyElement>) =>
   $body
     .find('[role="alert"].MuiAlert-outlinedInfo')
     .toArray()
     .some((el) =>
-      /This section is locked|already enrolled in Vietnam TRVC Rice/i.test(
+      /This section is locked already enrolled in Vietnam TRVC Rice|Phần này bị khóa vì bạn đã đăng ký vào Vietnam TRVC Rice Season 5\./i.test(
         Cypress.$(el).text(),
       ),
     );
@@ -675,27 +698,23 @@ const pollIntendedPracticesLockedAlert = (attempt = 0) =>
     if (attempt >= 10) {
       return cy.wrap(false);
     }
-    return cy
-      .wait(500)
-      .then(() => pollIntendedPracticesLockedAlert(attempt + 1));
+    return cy.wait(500).then(() => pollIntendedPracticesLockedAlert(attempt + 1));
   });
 
 /** Intended practices row on stage list is not available (Start disabled / subitem disabled). */
-const isIntendedPracticesStageDisabled = ($body) => {
-  const $title = $body.find(
-    '[data-testid="program-stage-subItem-title--Intended practices"]',
-  );
+const isIntendedPracticesStageDisabled = ($body: JQuery<HTMLBodyElement>) => {
+  const $title = findIntendedPracticesStageTitleInBody($body);
   if (!$title.length) return false;
   const $sub = $title.closest(".program-stage-subitem");
   if ($sub.length && $sub.hasClass("disabled")) return true;
-  const $btn = $body.find('button[aria-label="Intended practices"]');
-  return $btn.length > 0 && $btn.first().is(":disabled");
+  const $btn = findIntendedPracticesStartButtonInBody($body);
+  return $btn.length > 0 && $btn.is(":disabled");
 };
 
-const isIntendedPracticesStagePresentAndClickable = ($body) => {
-  const $title = $body.find(
-    '[data-testid="program-stage-subItem-title--Intended practices"]',
-  );
+const isIntendedPracticesStagePresentAndClickable = (
+  $body: JQuery<HTMLBodyElement>,
+) => {
+  const $title = findIntendedPracticesStageTitleInBody($body);
   if (!$title.length) return false;
   return !isIntendedPracticesStageDisabled($body);
 };
@@ -723,9 +742,7 @@ const pollIntendedPracticesStageAfterLogin = (attempt = 0) => {
     if (attempt >= 10) {
       return cy.wrap("ready");
     }
-    return cy
-      .wait(500)
-      .then(() => pollIntendedPracticesStageAfterLogin(attempt + 1));
+    return cy.wait(500).then(() => pollIntendedPracticesStageAfterLogin(attempt + 1));
   });
 };
 
@@ -735,41 +752,36 @@ const pollIntendedPracticesStageAfterLogin = (attempt = 0) => {
  * @param {number} [attempt=1]
  */
 const clickIntendedPracticesUntilHeadingVisible = (attempt = 1) =>
-  cy
-    .get('[data-testid="program-stage-subItem-title--Intended practices"]', {
-      timeout: 10000,
-    })
-    .click()
-    .then(() =>
-      cy.wait(500).then(() =>
-        cy.get("body").then(($body) => {
-          const $heading = $body.find(INTENDED_PRACTICES_HEADING_SEL);
-          const hasVisible =
-            $heading.filter((_, el) => Cypress.dom.isVisible(el)).length > 0;
-          if (hasVisible) {
-            cy.log(
-              `Intended practices heading visible (navigation attempt ${attempt}/${INTENDED_PRACTICES_NAV_ATTEMPTS})`,
-            );
-            return cy
-              .get(INTENDED_PRACTICES_HEADING_SEL)
-              .filter(":visible")
-              .first()
-              .should("be.visible");
-          }
-          if (attempt >= INTENDED_PRACTICES_NAV_ATTEMPTS) {
-            return cy
-              .get(INTENDED_PRACTICES_HEADING_SEL, { timeout: 15000 })
-              .should("be.visible");
-          }
+  clickIntendedPracticesStageTitle().then(() =>
+    cy.wait(500).then(() =>
+      cy.get("body").then(($body) => {
+        const $heading = $body.find(INTENDED_PRACTICES_HEADING_SEL);
+        const hasVisible =
+          $heading.filter((_, el) => Cypress.dom.isVisible(el)).length > 0;
+        if (hasVisible) {
           cy.log(
-            `Intended practices heading not ready — tab click retry ${attempt}/${INTENDED_PRACTICES_NAV_ATTEMPTS}`,
+            `Intended practices heading visible (navigation attempt ${attempt}/${INTENDED_PRACTICES_NAV_ATTEMPTS})`,
           );
           return cy
-            .wait(1000)
-            .then(() => clickIntendedPracticesUntilHeadingVisible(attempt + 1));
-        }),
-      ),
-    );
+            .get(INTENDED_PRACTICES_HEADING_SEL)
+            .filter(":visible")
+            .first()
+            .should("be.visible");
+        }
+        if (attempt >= INTENDED_PRACTICES_NAV_ATTEMPTS) {
+          return cy
+            .get(INTENDED_PRACTICES_HEADING_SEL, { timeout: 15000 })
+            .should("be.visible");
+        }
+        cy.log(
+          `Intended practices heading not ready — tab click retry ${attempt}/${INTENDED_PRACTICES_NAV_ATTEMPTS}`,
+        );
+        return cy
+          .wait(1000)
+          .then(() => clickIntendedPracticesUntilHeadingVisible(attempt + 1));
+      }),
+    ),
+  );
 
 /** Intended practices table: open each row’s dropdown and select fixed options when not already selected. */
 const fillIntendedPracticesTableRows = () => {
@@ -799,18 +811,14 @@ const fillIntendedPracticesTableRows = () => {
       if ($li.attr("aria-selected") === "false") {
         cy.wrap($li).click();
       } else {
-        cy.log(
-          'Skip "Reduced planting density" because aria-selected is not true',
-        );
+        cy.log('Skip "Reduced planting density" because aria-selected is not true');
       }
     });
     cy.get('li[data-value="Irrigation Management"]').then(($li) => {
       if ($li.attr("aria-selected") === "false") {
         cy.wrap($li).click();
       } else {
-        cy.log(
-          'Skip "Irrigation Management" because aria-selected is not true',
-        );
+        cy.log('Skip "Irrigation Management" because aria-selected is not true');
       }
     });
     cy.get("body").click(0, 0);
@@ -830,10 +838,7 @@ const clickMenubarProfileAndStopUsingImpersonatedUser = () =>
     .click()
     .then(() => cy.wait(200))
     .then(() =>
-      cy
-        .get("ul.sc-eeDRCY.jsJhko.MuiMenu-list")
-        .find("li:nth-child(2)")
-        .click(),
+      cy.get("ul.sc-eeDRCY.jsJhko.MuiMenu-list").find("li:nth-child(2)").click(),
     )
     .then(() => cy.url({ timeout: 30000 }).should("include", "admin/programs"))
     .then(() => cy.contains("Producers").should("be.visible"))
@@ -844,11 +849,7 @@ const clickMenubarProfileAndStopUsingImpersonatedUser = () =>
         .should("be.visible");
     });
 
-/**
- * Opens the login page and signs in with the given credentials.
- * @param {{ loginUrl: string, loginEmail: string, loginPassword: string }} opts
- */
-const visitAndLoginWithCredentials = (opts) => {
+const visitAndLoginWithCredentials = (opts: LoginCredentials) => {
   cy.visit(opts.loginUrl);
   cy.wait(3000);
 
@@ -863,8 +864,9 @@ const visitAndLoginWithCredentials = (opts) => {
 };
 
 describe("Automate input from excel", () => {
-  /** One `it` can run many Excel rows; allow long wall-clock time (ms). */
-  it("Full workflow", { timeout: 45 * 60 * 1000 }, () => {
+  // One `it` can run many Excel rows; allow long wall-clock time (ms)
+  it("Full workflow", function () {
+    this.timeout(45 * 60 * 1000);
     cy.env([
       "loginUrl",
       "loginEmail",
@@ -877,21 +879,22 @@ describe("Automate input from excel", () => {
       "dataRowSliceEnd",
       "filterProjectId",
     ]).then((cfg) => {
-      const excelDataStartRow = parseEnvInt(cfg.excelDataStartRow, 3);
-      const dataRowSliceStart = parseEnvInt(cfg.dataRowSliceStart, 2);
-      const dataRowSliceEnd = resolveSliceEnd(cfg.dataRowSliceEnd, 30);
-      const filterProjectId = String(cfg.filterProjectId ?? "").trim();
+      const env = cfg as WorkflowEnv;
+      const excelDataStartRow = parseEnvInt(env.excelDataStartRow, 3);
+      const dataRowSliceStart = parseEnvInt(env.dataRowSliceStart, 2);
+      const dataRowSliceEnd = resolveSliceEnd(env.dataRowSliceEnd, 30);
+      const filterProjectId = String(env.filterProjectId ?? "").trim();
 
       // Step 1: Visit login page and login with credentials
-      visitAndLoginWithCredentials(cfg);
+      visitAndLoginWithCredentials(env);
 
       // Step 2: Click on the program link
-      cy.contains("a", cfg.programLinkText).click();
+      cy.contains("a", env.programLinkText).click();
       cy.get(".MuiCircularProgress-svg").should("not.exist");
 
       // Step 3: Read the Excel file
-      cy.task("readExcelFile", {
-        relativePath: cfg.excelRelativePath,
+      cy.task<ExcelWorkbook>("readExcelFile", {
+        relativePath: env.excelRelativePath,
       }).then((workbook) => {
         expect(workbook).to.have.keys("relativePath", "sheetNames", "sheets");
         expect(workbook.sheets).to.be.an("array");
@@ -902,27 +905,28 @@ describe("Automate input from excel", () => {
         // ------------ Preparation ------------
         const header = workbook.sheets[0].rows[1];
         const firstRow = workbook.sheets[0].rows[0];
+        const cellStr = (cell: unknown) => String(cell ?? "");
         const projectIdColIdx = header.findIndex((cell) =>
-          /Project ID/.test(cell),
+          /Project ID/.test(cellStr(cell)),
         );
         const fullNameColIdx = header.findIndex((cell) =>
-          /Full Name/.test(cell),
+          /Full Name/.test(cellStr(cell)),
         );
-        // Survey questions
-        const a1aColIdx = firstRow.findIndex((cell) => /A1a/.test(cell));
-        const a1bColIdx = firstRow.findIndex((cell) => /A1b/.test(cell));
-        const a1cColIdx = firstRow.findIndex((cell) => /A1c/.test(cell));
-        const a2ColIdx = firstRow.findIndex((cell) => /A2/.test(cell));
-        const a3ColIdx = firstRow.findIndex((cell) => /A3/.test(cell));
-        const a4ColIdx = firstRow.findIndex((cell) => /A4/.test(cell));
-        const a4aColIdx = firstRow.findIndex((cell) => /A4a/.test(cell));
-        const a4bColIdx = firstRow.findIndex((cell) => /A4b/.test(cell));
-        const a5ColIdx = firstRow.findIndex((cell) => /A5/.test(cell));
-        const a6ColIdx = firstRow.findIndex((cell) => /A6/.test(cell));
-        const a7ColIdx = firstRow.findIndex((cell) => /A7/.test(cell));
-        const a8ColIdx = firstRow.findIndex((cell) => /A8/.test(cell));
-        const c4ColIdx = firstRow.findIndex((cell) => /C4/.test(cell));
-        const c5ColIdx = firstRow.findIndex((cell) => /C5/.test(cell));
+        // Survey question index in excel file
+        const a1aColIdx = firstRow.findIndex((cell) => /A1a/.test(cellStr(cell)));
+        const a1bColIdx = firstRow.findIndex((cell) => /A1b/.test(cellStr(cell)));
+        const a1cColIdx = firstRow.findIndex((cell) => /A1c/.test(cellStr(cell)));
+        const a2ColIdx = firstRow.findIndex((cell) => /A2/.test(cellStr(cell)));
+        const a3ColIdx = firstRow.findIndex((cell) => /A3/.test(cellStr(cell)));
+        const a4ColIdx = firstRow.findIndex((cell) => /A4/.test(cellStr(cell)));
+        const a4aColIdx = firstRow.findIndex((cell) => /A4a/.test(cellStr(cell)));
+        const a4bColIdx = firstRow.findIndex((cell) => /A4b/.test(cellStr(cell)));
+        const a5ColIdx = firstRow.findIndex((cell) => /A5/.test(cellStr(cell)));
+        const a6ColIdx = firstRow.findIndex((cell) => /A6/.test(cellStr(cell)));
+        const a7ColIdx = firstRow.findIndex((cell) => /A7/.test(cellStr(cell)));
+        const a8ColIdx = firstRow.findIndex((cell) => /A8/.test(cellStr(cell)));
+        const c4ColIdx = firstRow.findIndex((cell) => /C4/.test(cellStr(cell)));
+        const c5ColIdx = firstRow.findIndex((cell) => /C5/.test(cellStr(cell)));
 
         if (projectIdColIdx === -1) {
           throw new Error("Project ID column not found");
@@ -985,7 +989,7 @@ describe("Automate input from excel", () => {
           if (lo === hi) {
             return `Excel 1-based row ${lo} (${sliceHint})`;
           }
-          return `Excel 1-based rows ${lo}–${hi} (${rowsToRun.length} data rows, ${sliceHint})`;
+          return `Excel 1-based rows ${lo}-${hi} (${rowsToRun.length} data rows, ${sliceHint})`;
         }
 
         /** Appends run log row and updates success/failed counters (success = finished + no errorMessage). */
@@ -993,8 +997,7 @@ describe("Automate input from excel", () => {
           return cy.task("appendExcelRunLog", opts).then(() => {
             stats.rowsLogged += 1;
             const em =
-              opts.errorMessage != null &&
-              String(opts.errorMessage).trim() !== "";
+              opts.errorMessage != null && String(opts.errorMessage).trim() !== "";
             if (opts.finished === true && !em) {
               stats.success += 1;
             } else {
@@ -1003,8 +1006,16 @@ describe("Automate input from excel", () => {
           });
         }
 
+        interface PendingRowLog {
+          row: ExcelRow;
+          logHeaders: string[];
+          cfg: WorkflowEnv;
+          index: number;
+          projectIdColIdx: number;
+        }
+
         /** Set while a row's Cypress commands are running so `onRowFail` can log and continue. */
-        let pendingRowLog = null;
+        let pendingRowLog: PendingRowLog | null = null;
 
         function onRowFail(err) {
           const ctx = pendingRowLog;
@@ -1029,7 +1040,7 @@ describe("Automate input from excel", () => {
           return false;
         }
 
-        function runFromIndex(i) {
+        function runFromIndex(i: number) {
           if (i >= rowsToRun.length) {
             Cypress.off("fail", onRowFail);
             const rangeSummary = buildExcelRunRangeSummary();
@@ -1040,23 +1051,31 @@ describe("Automate input from excel", () => {
             cy.log(
               `Rows written to run log: ${stats.rowsLogged} (may be less than above if the test stopped early)`,
             );
-            cy.log(
-              `Success (finished, no Error column text): ${stats.success}`,
-            );
+            cy.log(`Success (finished, no Error column text): ${stats.success}`);
             cy.log(
               `Failed or skipped with note (finished false, or Error column set): ${stats.failed}`,
             );
             cy.log(`Excel row range (1-based sheet rows): ${rangeSummary}`);
             cy.log("==================================");
-            return cy.wrap(null, { log: false });
+            return cy
+              .log(
+                `SUMMARY rows=${rowsToRun.length} logged=${stats.rowsLogged} success=${stats.success} failed=${stats.failed} | ${rangeSummary}`,
+              )
+              .then(() => cy.wrap(null, { log: false }));
           }
           const row = rowsToRun[i];
           const projectId = row[projectIdColIdx];
-          pendingRowLog = { row, logHeaders, cfg, index: i, projectIdColIdx };
+          pendingRowLog = {
+            row,
+            logHeaders,
+            cfg: env,
+            index: i,
+            projectIdColIdx,
+          };
 
           const swappedName = swapVietnameseName(row[fullNameColIdx]);
 
-          const surveyColIdx = {
+          const surveyColIdx: SurveyColIdx = {
             a1aColIdx,
             a1bColIdx,
             a1cColIdx,
@@ -1077,9 +1096,7 @@ describe("Automate input from excel", () => {
             .log(`Project ID: ${projectId}`)
             .then(() =>
               cy
-                .get('input[placeholder="Search producers"]', {
-                  timeout: 10000,
-                })
+                .get('input[placeholder="Search producers"]')
                 .should("not.be.disabled")
                 .clear()
                 .type(projectId),
@@ -1092,21 +1109,19 @@ describe("Automate input from excel", () => {
             .then(() => cy.wait(1000))
             .then(() => cy.get(".MuiCircularProgress-svg").should("not.exist"))
             .then(() =>
-              cy
-                .get("div.MuiDataGrid-virtualScrollerContent")
-                .should("be.visible"),
+              cy.get("div.MuiDataGrid-virtualScrollerContent").should("be.visible"),
             )
-            .then(() => cy.clickLoginAsWhenNotEnrolled(swappedName))
+            .then(() =>
+              cy.clickLoginAsWhenNotEnrolled([swappedName, row[fullNameColIdx]]),
+            )
             .then((didClickLoginAs) => {
               if (!didClickLoginAs) {
                 pendingRowLog = null;
                 return cy
-                  .log(
-                    "Skip follow-up click because user is enrolled/not matched.",
-                  )
+                  .log("Skip follow-up click because user is enrolled/not matched.")
                   .then(() =>
                     appendExcelRunLogAndRecord({
-                      relativePath: cfg.excelLogRelativePath,
+                      relativePath: env.excelLogRelativePath,
                       headers: logHeaders,
                       rowValues: row,
                       finished: true,
@@ -1128,7 +1143,7 @@ describe("Automate input from excel", () => {
                       )
                       .then(() =>
                         appendExcelRunLogAndRecord({
-                          relativePath: cfg.excelLogRelativePath,
+                          relativePath: env.excelLogRelativePath,
                           headers: logHeaders,
                           rowValues: row,
                           finished: true,
@@ -1136,9 +1151,7 @@ describe("Automate input from excel", () => {
                             "Skipped: Intended practices disabled (program stage)",
                         }),
                       )
-                      .then(() =>
-                        clickMenubarProfileAndStopUsingImpersonatedUser(),
-                      )
+                      .then(() => clickMenubarProfileAndStopUsingImpersonatedUser())
                       .then(() => runFromIndex(i + 1));
                   }
                   return clickIntendedPracticesUntilHeadingVisible()
@@ -1153,9 +1166,8 @@ describe("Automate input from excel", () => {
                       return fillIntendedPracticesTableRows();
                     })
                     .then(() => cy.wait(3000))
-                    .then(() => cy.contains("button", /^Next$/).click())
-                    .then(() => cy.wait(4000))
-                    .then(() => cy.wait(5000))
+                    .then(() => cy.contains("button", /^Next|Tiếp theo$/).click())
+                    .then(() => cy.wait(6000))
                     .then(() =>
                       runSurveyFlowIfIncomplete(
                         () =>
@@ -1167,33 +1179,25 @@ describe("Automate input from excel", () => {
                               cy.log(
                                 "Pagination Next not visible — skip click, run survey steps",
                               );
-                              return runIncompleteSurveyWithGuards(
-                                row,
-                                surveyColIdx,
-                              );
+                              return runIncompleteSurveyWithGuards(row, surveyColIdx);
                             }
                             return cy
                               .wrap($next.first())
                               .trigger("click")
                               .then(() => cy.wait(2000))
                               .then(() =>
-                                runIncompleteSurveyWithGuards(
-                                  row,
-                                  surveyColIdx,
-                                ),
+                                runIncompleteSurveyWithGuards(row, surveyColIdx),
                               );
                           }),
                         () =>
                           cy
-                            .contains("button", /^Finish$/i)
+                            .contains("button", /^Finish|Hoàn thành$/i)
                             .should("be.visible")
                             .click()
                             .then(() =>
                               cy
-                                .get(
-                                  'button[data-testid="finish-phase-button"]',
-                                )
-                                .contains("Complete enrollment")
+                                .get('button[data-testid="finish-phase-button"]')
+                                .contains(/Complete enrollment|Hoàn tất đăng ký/i)
                                 .should("be.visible")
                                 .click(),
                             )
@@ -1205,7 +1209,7 @@ describe("Automate input from excel", () => {
                     )
                     .then(() =>
                       appendExcelRunLogAndRecord({
-                        relativePath: cfg.excelLogRelativePath,
+                        relativePath: env.excelLogRelativePath,
                         headers: logHeaders,
                         rowValues: row,
                         finished: true,

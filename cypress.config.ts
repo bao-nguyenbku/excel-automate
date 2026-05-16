@@ -1,9 +1,20 @@
-const fs = require("fs");
-const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, ".env") });
+import fs from "fs";
+import path from "path";
+import dotenv from "dotenv";
+import * as XLSX from "xlsx";
+import { defineConfig } from "cypress";
+import type { AppendExcelRunLogOptions, ExcelWorkbook } from "./cypress/types";
 
-const XLSX = require("xlsx");
-const { defineConfig } = require("cypress");
+dotenv.config({ path: path.resolve(__dirname, ".env") });
+
+const terminalLogToConsole =
+  process.env.CYPRESS_TERMINAL_LOG === "always" ? "always" : "onFail";
+const terminalLogToFile =
+  process.env.CYPRESS_TERMINAL_LOG_FILE === "never"
+    ? "never"
+    : process.env.CYPRESS_TERMINAL_LOG === "always"
+      ? "always"
+      : "onFail";
 
 /** Fallbacks if a key is omitted from `.env`. */
 const ENV_DEFAULTS = {
@@ -19,15 +30,13 @@ const ENV_DEFAULTS = {
   excelLogRelativePath: "cypress/fixtures/run-log.xlsx",
 };
 
-/** @param {string} name @param {string} fallback */
-const fromEnvStr = (name, fallback) => {
+const fromEnvStr = (name: string, fallback: string): string => {
   const v = process.env[name];
   if (v === undefined) return fallback;
   return v;
 };
 
-/** @param {string} name @param {number} fallback */
-const fromEnvInt = (name, fallback) => {
+const fromEnvInt = (name: string, fallback: number): number => {
   const v = process.env[name];
   if (v === undefined || v === "") return fallback;
   const n = Number(v);
@@ -35,11 +44,8 @@ const fromEnvInt = (name, fallback) => {
   return n;
 };
 
-/**
- * DATA_ROW_SLICE_END: number (exclusive), or empty / "end" → slice through last row.
- * @param {number|string} fallback
- */
-const fromEnvSliceEnd = (fallback) => {
+// DATA_ROW_SLICE_END: number (exclusive), or empty / "end" → slice through last row
+const fromEnvSliceEnd = (fallback: number): number | "" => {
   const v = process.env.DATA_ROW_SLICE_END;
   if (v === undefined) return fallback;
   const t = String(v).trim();
@@ -49,22 +55,14 @@ const fromEnvSliceEnd = (fallback) => {
   return n;
 };
 
-module.exports = defineConfig({
+export default defineConfig({
   allowCypressEnv: true,
   viewportWidth: 1600,
   viewportHeight: 900,
-  /** Per-command default (ms). Raise if you see “Timed out retrying…” on slow UI. */
   defaultCommandTimeout: 15000,
-  /** `cy.visit` / page transitions (ms). */
   pageLoadTimeout: 120000,
-  /** `cy.task` (e.g. Excel read/write) must finish within this (ms). */
   taskTimeout: 180000,
-  /**
-   * Long batch runs (20+ min): reduces Cypress runner / snapshot memory.
-   * In `cypress open`, keeps fewer past tests in memory (helps multi-`it` specs).
-   */
   numTestsKeptInMemory: 0,
-  /** Chromium GC between tests; helps long headed runs. */
   experimentalMemoryManagement: true,
   video: false,
   screenshotOnRunFailure: true,
@@ -75,10 +73,7 @@ module.exports = defineConfig({
       loginUrl: fromEnvStr("LOGIN_URL", ENV_DEFAULTS.loginUrl),
       loginEmail: fromEnvStr("LOGIN_EMAIL", ENV_DEFAULTS.loginEmail),
       loginPassword: fromEnvStr("LOGIN_PASSWORD", ENV_DEFAULTS.loginPassword),
-      programLinkText: fromEnvStr(
-        "PROGRAM_LINK_TEXT",
-        ENV_DEFAULTS.programLinkText,
-      ),
+      programLinkText: fromEnvStr("PROGRAM_LINK_TEXT", ENV_DEFAULTS.programLinkText),
       excelRelativePath: fromEnvStr(
         "EXCEL_RELATIVE_PATH",
         ENV_DEFAULTS.excelRelativePath,
@@ -92,16 +87,36 @@ module.exports = defineConfig({
         ENV_DEFAULTS.dataRowSliceStart,
       ),
       dataRowSliceEnd: fromEnvSliceEnd(ENV_DEFAULTS.dataRowSliceEnd),
-      filterProjectId: fromEnvStr(
-        "FILTER_PROJECT_ID",
-        ENV_DEFAULTS.filterProjectId,
-      ),
+      filterProjectId: fromEnvStr("FILTER_PROJECT_ID", ENV_DEFAULTS.filterProjectId),
       excelLogRelativePath: fromEnvStr(
         "EXCEL_LOG_RELATIVE_PATH",
         ENV_DEFAULTS.excelLogRelativePath,
       ),
     },
     setupNodeEvents(on, config) {
+      // Mirror Cypress command log in the terminal during `cypress run`.
+      // Pair with CYPRESS_NO_COMMAND_LOG=1 so output is not duplicated/suppressed.
+      //
+      // Workaround: enableContinuousLogging passes continuous:true, but consoleProcessor
+      // only prints output.substring(-1) (last character). Force full lines to the terminal.
+      const consoleProcessor = require("cypress-terminal-report/src/outputProcessor/consoleProcessor");
+      const printLogsToTerminal = consoleProcessor.default;
+      consoleProcessor.default = (
+        messages: unknown,
+        options: unknown,
+        data: { continuous?: boolean } & Record<string, unknown>,
+      ) => {
+        printLogsToTerminal(messages, options, { ...data, continuous: false });
+      };
+
+      require("cypress-terminal-report/src/installLogsPrinter")(on, {
+        printLogsToConsole: terminalLogToConsole,
+        printLogsToFile: terminalLogToFile,
+        outputRoot: path.join(config.projectRoot, "cypress/logs"),
+        outputTarget: {
+          "terminal-log.txt": "txt",
+        },
+      });
       on("before:browser:launch", (browser, launchOptions) => {
         if (browser.family === "chromium") {
           launchOptions.args.push(
@@ -114,12 +129,7 @@ module.exports = defineConfig({
         return launchOptions;
       });
       on("task", {
-        /**
-         * Reads full .xlsx content: every sheet as a 2D array (row-major), including header rows.
-         * @param {{ relativePath: string }} opts
-         * @returns {{ relativePath: string, sheetNames: string[], sheets: { name: string, rows: (string|number|null)[][] }[] }}
-         */
-        readExcelFile(opts) {
+        readExcelFile(opts: { relativePath?: string }): ExcelWorkbook {
           const relativePath = opts?.relativePath;
           if (!relativePath) {
             throw new Error("readExcelFile: relativePath is required");
@@ -132,7 +142,7 @@ module.exports = defineConfig({
               header: 1,
               defval: null,
               raw: false,
-            });
+            }) as unknown[][];
             return {
               name,
               rows: rows.map((row) =>
@@ -141,7 +151,7 @@ module.exports = defineConfig({
                       if (cell instanceof Date) {
                         return cell.toISOString();
                       }
-                      return cell;
+                      return cell as string | number | null;
                     })
                   : [],
               ),
@@ -149,19 +159,11 @@ module.exports = defineConfig({
           }).filter((sheet) => sheet.name === "Dữ liệu GEDSI");
           return {
             relativePath,
-            sheetNames: workbook.SheetNames.filter(
-              (name) => name === "Dữ liệu GEDSI",
-            ),
+            sheetNames: workbook.SheetNames.filter((name) => name === "Dữ liệu GEDSI"),
             sheets,
           };
         },
-        /**
-         * Appends one row to a run log .xlsx: same columns as `rowValues`, plus `Finished` and `Error`.
-         * Creates the file with a header row if it does not exist.
-         * Older logs without an `Error` column get that column added on the next append.
-         * @param {{ relativePath: string, headers: string[], rowValues: unknown[], finished: boolean, errorMessage?: string }} opts
-         */
-        appendExcelRunLog(opts) {
+        appendExcelRunLog(opts: AppendExcelRunLogOptions): null {
           const relativePath = opts?.relativePath;
           const headers = opts?.headers;
           const rowValues = opts?.rowValues;
@@ -174,31 +176,29 @@ module.exports = defineConfig({
             throw new Error("appendExcelRunLog: relativePath is required");
           }
           if (!Array.isArray(headers) || !headers.length) {
-            throw new Error(
-              "appendExcelRunLog: headers must be a non-empty array",
-            );
+            throw new Error("appendExcelRunLog: headers must be a non-empty array");
           }
           if (!Array.isArray(rowValues)) {
             throw new Error("appendExcelRunLog: rowValues must be an array");
           }
 
-          const normalizeCell = (cell) => {
+          const normalizeCell = (cell: unknown) => {
             if (cell instanceof Date) {
               return cell.toISOString();
             }
             return cell;
           };
 
-          const ensureErrorColumn = (existing) => {
+          const ensureErrorColumn = (existing: unknown[][]) => {
             if (!existing.length) return existing;
-            const headerRow = existing[0];
+            const headerRow = existing[0] as unknown[];
             if (headerRow[headerRow.length - 1] === "Error") {
               return existing;
             }
             headerRow.push("Error");
             for (let r = 1; r < existing.length; r++) {
               if (!existing[r]) existing[r] = [];
-              existing[r].push("");
+              (existing[r] as unknown[]).push("");
             }
             return existing;
           };
@@ -228,7 +228,7 @@ module.exports = defineConfig({
             let existing = XLSX.utils.sheet_to_json(sheet, {
               header: 1,
               defval: null,
-            });
+            }) as unknown[][];
             existing = ensureErrorColumn(existing);
             existing.push(line);
             workbook.Sheets[name] = XLSX.utils.aoa_to_sheet(existing);
