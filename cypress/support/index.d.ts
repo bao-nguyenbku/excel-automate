@@ -1,12 +1,16 @@
 /// <reference types="cypress" />
 
-import type { AppendExcelRunLogOptions, ExcelWorkbook } from "../types";
+import type {
+  AppendExcelRunLogOptions,
+  ClickLoginAsWhenNotEnrolledProps,
+  ExcelWorkbook,
+} from '../types';
 
 declare global {
   namespace Cypress {
     interface Chainable {
       clickLoginAsWhenNotEnrolled(
-        names: string[],
+        props: ClickLoginAsWhenNotEnrolledProps,
         options?: { timeout?: number },
       ): Chainable<boolean>;
     }

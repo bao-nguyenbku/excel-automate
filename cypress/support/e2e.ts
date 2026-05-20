@@ -15,8 +15,8 @@
 
 // Live mode streams each command to the terminal during long single-`it` runs.
 // Requires the consoleProcessor workaround in cypress.config.ts.
-require("cypress-terminal-report/src/installLogsCollector")({
-  enableContinuousLogging: true,
+require('cypress-terminal-report/src/installLogsCollector')({
+  enableContinuousLogging: Cypress.expose('terminalLogLive') === true,
   xhr: {
     printBody: false,
     printHeaderData: false,
@@ -25,7 +25,7 @@ require("cypress-terminal-report/src/installLogsCollector")({
 });
 
 // Native pointer events (CDP) — helps some controls (e.g. react-select in iframes).
-import "cypress-real-events";
+import 'cypress-real-events';
 
 // Import commands.ts using ES2015 syntax:
-import "./commands";
+import './commands';

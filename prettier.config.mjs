@@ -2,9 +2,9 @@
 export default {
   semi: true,
   singleQuote: true,
-  trailingComma: "all",
+  trailingComma: 'all',
   printWidth: 120,
   tabWidth: 2,
   useTabs: false,
-  endOfLine: "auto",
+  endOfLine: 'auto',
 };

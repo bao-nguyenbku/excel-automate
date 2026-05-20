@@ -1,3 +1,5 @@
+# Lines starting with # are comments. Use quotes around values that contain spaces.
+
 LOGIN_URL="https://app.regrow.ag/mrv/login?redirect=/mrv/admin/programs"
 LOGIN_EMAIL=hotro@vietnga.vn
 LOGIN_PASSWORD=Nhapnongho@vietnga6677
@@ -9,5 +11,9 @@ EXCEL_DATA_START_ROW=4
 DATA_ROW_SLICE_START=531
 DATA_ROW_SLICE_END=560
 
-FILTER_PROJECT_ID=
+# Leave empty to use DATA_ROW_SLICE_START / DATA_ROW_SLICE_END instead
+FILTER_PROJECT_ID=79855
+
 CYPRESS_TERMINAL_LOG=always
+# Optional: CYPRESS_TERMINAL_LOG_FILE=always
+# Optional: CYPRESS_TERMINAL_LOG_LIVE=1

@@ -1,3 +1,0 @@
-cypress/e2e/automate-excel-input.cy.ts:
-    Automate input from excel -> Full workflow
-

@@ -12,7 +12,7 @@ export interface ExcelWorkbook {
   sheets: ExcelSheet[];
 }
 
-export type SurveyFieldKind = "dropdown" | "yesNo" | "text" | "optionalText" | "date";
+export type SurveyFieldKind = 'dropdown' | 'yesNo' | 'text' | 'optionalText' | 'date';
 
 export interface SurveyColIdx {
   a1aColIdx: number;
@@ -48,8 +48,9 @@ export interface WorkflowEnv extends LoginCredentials {
   excelLogRelativePath: string;
   excelDataStartRow: number;
   dataRowSliceStart: number;
-  dataRowSliceEnd: number | "" | undefined;
+  dataRowSliceEnd: number | '' | undefined;
   filterProjectId: string;
+  terminalLogLive: boolean;
 }
 
 export interface AppendExcelRunLogOptions {
@@ -59,3 +60,16 @@ export interface AppendExcelRunLogOptions {
   finished: boolean;
   errorMessage?: string;
 }
+
+export type ClickLoginAsWhenNotEnrolledProps = {
+  names: string[];
+  phoneNumber: string;
+};
+
+export type PendingRowLog = {
+  row: ExcelRow;
+  logHeaders: string[];
+  cfg: WorkflowEnv;
+  index: number;
+  projectIdColIdx: number;
+};
