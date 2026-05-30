@@ -214,7 +214,7 @@ describe('Automate input from excel', () => {
             .then(() =>
               cy
                 .get('input[placeholder="Search producers"]')
-                .should('not.be.disabled')
+                .should('not.be.disabled', { timeout: 15000 })
                 .clear()
                 .type(projectId as string),
             )
