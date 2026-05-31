@@ -87,7 +87,7 @@ const pollIntendedPracticesStageAfterLogin = (attempt = 0) => {
       return cy.wrap('ready');
     }
     if (attempt >= 10) {
-      return cy.wrap('ready');
+      return cy.wrap(findIntendedPracticesStageTitleInBody($body).length ? 'ready' : 'missing');
     }
     return cy.wait(500).then(() => pollIntendedPracticesStageAfterLogin(attempt + 1));
   });

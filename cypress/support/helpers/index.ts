@@ -1,5 +1,8 @@
 export { visitAndLoginWithCredentials } from './auth';
-export { clickMenubarProfileAndStopUsingImpersonatedUser } from './producers';
+export {
+  clickMenubarProfileAndStopUsingImpersonatedUser,
+  recoverToProducersPageIfNeeded,
+} from './producers';
 export {
   clickIntendedPracticesUntilHeadingVisible,
   fillIntendedPracticesTableRows,

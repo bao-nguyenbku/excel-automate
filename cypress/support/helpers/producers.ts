@@ -12,3 +12,13 @@ export const clickMenubarProfileAndStopUsingImpersonatedUser = () =>
       cy.wait(5000);
       cy.get('h3.MuiTypography-root.MuiTypography-h3').contains('Producers').should('be.visible');
     });
+
+/** After a row error mid-impersonation, return to the admin Producers tab before the next row. */
+export const recoverToProducersPageIfNeeded = () =>
+  cy.url({ log: false }).then((url) => {
+    if (url.includes('/mrv/project/')) {
+      cy.log('Recovering: still on impersonated project page — stopping impersonation');
+      return clickMenubarProfileAndStopUsingImpersonatedUser();
+    }
+    return cy.wrap(null, { log: false });
+  });

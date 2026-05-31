@@ -2,6 +2,7 @@ import type { ExcelRow, ExcelWorkbook, PendingRowLog, SurveyColIdx, WorkflowEnv 
 import {
   visitAndLoginWithCredentials,
   clickMenubarProfileAndStopUsingImpersonatedUser,
+  recoverToProducersPageIfNeeded,
   clickIntendedPracticesUntilHeadingVisible,
   fillIntendedPracticesTableRows,
   getIframe,
@@ -148,15 +149,17 @@ describe('Automate input from excel', () => {
           const errMsg = err?.message ?? String(err);
           cy.log(`Cypress error for projectId ${ctx.row[ctx.projectIdColIdx]}: ${errMsg}`);
           const next = ctx.index + 1;
-          setTimeout(() => {
-            appendExcelRunLogAndRecord({
-              relativePath: ctx.cfg.excelLogRelativePath,
-              headers: ctx.logHeaders,
-              rowValues: ctx.row,
-              finished: false,
-              errorMessage: errMsg,
-            }).then(() => runFromIndex(next));
-          }, 0);
+          cy.then(() => recoverToProducersPageIfNeeded())
+            .then(() =>
+              appendExcelRunLogAndRecord({
+                relativePath: ctx.cfg.excelLogRelativePath,
+                headers: ctx.logHeaders,
+                rowValues: ctx.row,
+                finished: false,
+                errorMessage: errMsg,
+              }),
+            )
+            .then(() => runFromIndex(next));
           return false;
         }
 
@@ -253,17 +256,21 @@ describe('Automate input from excel', () => {
                 .then(() => processFoundationFarmingAfterLogin())
                 .then(() => pollIntendedPracticesStageAfterLogin())
                 .then((stageState) => {
-                  if (stageState === 'disabled') {
+                  if (stageState === 'disabled' || stageState === 'missing') {
                     pendingRowLog = null;
+                    const skipReason =
+                      stageState === 'disabled'
+                        ? 'Skipped: Intended practices disabled (program stage)'
+                        : 'Skipped: Intended practices stage not found after wait';
                     return cy
-                      .log(`Skip projectId ${projectId} — Intended practices disabled on program stage`)
+                      .log(`Skip projectId ${projectId} — ${skipReason}`)
                       .then(() =>
                         appendExcelRunLogAndRecord({
                           relativePath: env.excelLogRelativePath,
                           headers: logHeaders,
                           rowValues: row,
                           finished: true,
-                          errorMessage: 'Skipped: Intended practices disabled (program stage)',
+                          errorMessage: skipReason,
                         }),
                       )
                       .then(() => clickMenubarProfileAndStopUsingImpersonatedUser())
